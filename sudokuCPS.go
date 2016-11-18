@@ -1,82 +1,13 @@
 /* ****************************************************************************
 A Constraint Propagation Search algorithm to solve general sudoku puzzles of
 any dimension based on the work by Peter Norvig: http://norvig.com/sudoku.html
-
-Copyright (c) 2016 Everett Robinson
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of
-this software and associated documentation files (the "Software"), to deal in
-Software without restriction, including without limitation the rights to use,
-copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the
-Software, and to permit persons to whom the Software is furnished to do so,
-subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
-FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
-COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
-IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
-CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 * ****************************************************************************/
 
-package main
+package sudokuCPS
 
 import (
-	"bufio"
-	"flag"
-	"fmt"
-	"io"
-	"os"
 	"strconv"
-	"strings"
-	"time"
 )
-
-// Modified from https://stackoverflow.com/questions/9862443/golang-is-there-a-better-way-read-a-file-of-integers-into-an-array
-// Read in the start state of the sudoku puzzle (of arbitrary dimension) in a single line presentation.
-func readInOneLine(r io.Reader, line int, delimiter string, emptyValue string, blockXDim int, blockYDim int) (puzzle map[string]string, e error) {
-
-	scanner := bufio.NewScanner(r)
-	scanner.Split(bufio.ScanLines)
-
-	// Start puzzle at line 1 (more user friendly)
-	lineCounter := 1
-
-	// For each line
-	for scanner.Scan() {
-
-		// Check if it's the line we selected
-		if line == lineCounter {
-
-			// Read the puzzle text in and split it into it's components
-			puzzleText := scanner.Text()
-			puzzleElements := strings.Split(puzzleText, delimiter)
-			puzzleDim := blockXDim * blockYDim
-			puzzle = make(map[string]string)
-
-			for i := 0; i < puzzleDim; i++ {
-				row := numberToAlpha(i + 1)
-				for j := 0; j < puzzleDim; j++ {
-					column := strconv.Itoa(j + 1)
-					position := row + column
-					element := puzzleElements[(i*puzzleDim)+j]
-					if element != emptyValue {
-						puzzle[position] = element
-					} else {
-						puzzle[position] = "0"
-					}
-				}
-			}
-		}
-
-		lineCounter++
-	}
-
-	return puzzle, scanner.Err()
-}
 
 // return the number of digits in an int up to 4. Sudoku puzzles of greater than
 // 9999*9999 are probably not practical.
@@ -97,40 +28,38 @@ func numDigits(n int) int {
 	return 4
 }
 
-// Make the puzzle look like a sudoku
-func printPuzzle(puzzle map[string]string, blockXDim int, blockYDim int) {
+func convertIntSliceToMap(originalPuzzle [][]int) (convertedPuzzle map[string]string) {
+	convertedPuzzle = make(map[string]string)
 
-	puzzleDim := blockXDim * blockYDim
-
-	width := numDigits(blockXDim * blockYDim)
-
-	for r := 0; r < puzzleDim; r++ {
-		if r > 0 && r%blockYDim == 0 {
-			for i := 0; i < (blockXDim-1)+(width+2)*blockXDim*blockYDim; i++ {
-				fmt.Printf("%s", "-")
-			}
-			fmt.Println()
-		}
-		for c := 0; c < puzzleDim; c++ {
-			if c > 0 && c%blockXDim == 0 {
-				fmt.Printf("|")
-			}
-			row := numberToAlpha(r + 1)
-			column := strconv.Itoa(c + 1)
+	for i := range originalPuzzle {
+		row := numberToAlpha(i + 1)
+		for j := range originalPuzzle[i] {
+			column := strconv.Itoa(j + 1)
 			position := row + column
-			if puzzle[position] != "0" {
-				fmt.Printf("%-*s%s ", width-len(puzzle[position])+1, " ", puzzle[position])
-			} else {
-				fmt.Printf("%-*s ", width+1, " ")
-			}
+			element := strconv.Itoa(originalPuzzle[i][j])
+			convertedPuzzle[position] = element
 		}
-		fmt.Printf("\n")
 	}
+	return convertedPuzzle
+}
 
+func convertMapToIntSlice(originalPuzzle map[string]string, puzzleDim int) (convertedPuzzle [][]int) {
+	convertedPuzzle = make([][]int, puzzleDim, puzzleDim)
+	for i := 0; i < puzzleDim; i++ {
+		convertedPuzzle[i] = make([]int, puzzleDim, puzzleDim)
+		row := numberToAlpha(i + 1)
+		for j := 0; j < puzzleDim; j++ {
+			column := strconv.Itoa(j + 1)
+			position := row + column
+			element, _ := strconv.Atoi(originalPuzzle[position])
+			convertedPuzzle[i][j] = element
+		}
+	}
+	return convertedPuzzle
 }
 
 // Convert a solved puzzle from the values representation to the solved representation
-func convertPuzzle(originalPuzzle map[string][]string) (convertedPuzzle map[string]string) {
+func convertValuesToSolved(originalPuzzle map[string][]string) (convertedPuzzle map[string]string) {
 	convertedPuzzle = make(map[string]string)
 
 	// copy each map element
@@ -175,6 +104,19 @@ func divmod(number int, base int) (quotient int, remainder int) {
 	return quotient, remainder
 }
 
+// Integer exponentiation. return a^b.
+func pow(a, b int) int {
+	p := 1
+	for b > 0 {
+		if b&1 != 0 {
+			p *= a
+		}
+		b >>= 1
+		a *= a
+	}
+	return p
+}
+
 // Convert a base 10 number to a corresponding alpha character where 1 = A, ..., 26 = Z.
 func numberToAlpha(number int) (alpha string) {
 
@@ -187,12 +129,32 @@ func numberToAlpha(number int) (alpha string) {
 	var remainder int
 
 	for number > 0 {
-
 		number, remainder = divmod(number-1, base)
 		alphaString = alphabet[remainder] + alphaString
 	}
 
 	return alphaString
+}
+
+// Convert a base 10 number to a corresponding alpha character where A = 1, ..., Z = 26.
+func alphaToNumber(alphaString string) (number int) {
+
+	alphabet := map[string]int{
+	"A":1, "B":2, "C":3, "D":4, "E":5, "F":6, "G":7, "H":8, "I":9, "J":10, "K":11,
+	"L":12, "M":13, "N":14, "O":15, "P":16, "Q":17, "R":18, "S":19, "T":20, "U":21,
+	"V":22, "W":23, "X":24, "Y":25, "Z":26,
+	}
+
+	number = 0
+	base := 26
+	characters := []rune(alphaString)
+	characterCount := len(characters)
+
+	for i, c := range characters {
+		number = number + alphabet[string(c)]*pow(base, characterCount-1-i)
+	}
+
+	return number
 }
 
 // Create a slice for the column headers and digits in the puzzle
@@ -273,11 +235,11 @@ func makeUnitList(rows []string, columns []string, blockXDim int, blockYDim int)
 	// The generalized form of: [cross(rs, cs) for rs in ('ABC','DEF','GHI') for cs in ('123','456','789')]
 	for rs := 0; rs < blockXDim; rs++ {
 
-		subRow := rows[rs*blockXDim : (rs+1)*blockXDim]
+		subRow := rows[rs*blockYDim : (rs+1)*blockYDim]
 
 		for cs := 0; cs < blockYDim; cs++ {
 
-			subColumn := columns[cs*blockYDim : (cs+1)*blockYDim]
+			subColumn := columns[cs*blockXDim : (cs+1)*blockXDim]
 
 			unitList[i] = cross(subRow, subColumn)
 
@@ -474,98 +436,33 @@ func search(values map[string][]string, digits []string, peers map[string]map[st
 	return nil, true
 }
 
-// Use constraint propagation on the original puzzle via parseGrid(), then backtack/search through the remaining possibilities
-func solve(puzzle map[string]string, digits []string, peers map[string]map[string]bool, units map[string][][]string) (map[string]string, bool) {
+// Solve uses constraint propagation on the original puzzle via parseGrid(), then backtack/search through the remaining possibilities
+func Solve(originalPuzzle [][]int, blockXDim, blockYDim int) ([][]int, bool) {
+
+	puzzle := convertIntSliceToMap(originalPuzzle)
+
+	digits := makeDigits(blockXDim * blockYDim)
+	rows := makeRows(blockXDim * blockYDim)
+	columns := digits
+	squares := cross(rows, columns)
+	unitList := makeUnitList(rows, columns, blockXDim, blockYDim)
+	units := makeUnits(squares, unitList)
+	peers := makePeers(units, blockXDim, blockYDim)
 
 	values, contradiction := parseGrid(puzzle, digits, peers, units)
 
 	if contradiction {
-		return nil, contradiction
+		return nil, false
 	}
 
 	searchedPuzzle, contradiction := search(values, digits, peers, units)
 
 	if contradiction {
-		return nil, contradiction
+		return nil, false
 	}
 
-	solvedPuzzle := convertPuzzle(searchedPuzzle)
+	solvedPuzzleMap := convertValuesToSolved(searchedPuzzle)
+	solvedPuzzle := convertMapToIntSlice(solvedPuzzleMap, blockXDim * blockYDim)
 
-	return solvedPuzzle, false
-}
-
-func main() {
-	start := time.Now()
-
-	inputModePtr := flag.String("m", "one-line", "An input mode used to interpret the input file")
-	delimiterPtr := flag.String("del", "", "The delimeter used to separate the puzzle squares in the input")
-	emptyValuePtr := flag.String("e", ".", "The character used to indicate an empty square in the puzzle")
-	dimPtr := flag.String("d", "3x3", "The dimensions of one of the puzzle blocks (eg. standard sudoku is 3x3)")
-	filePtr := flag.String("f", "puzzles.txt", "The filename to be checked")
-	linePtr := flag.String("l", "1", "The line of the puzzle to be solved")
-
-	flag.Parse()
-
-	puzzleLine, _ := strconv.Atoi(*linePtr)
-	puzzleDim := strings.Split(*dimPtr, "x")
-	blockXDim, _ := strconv.Atoi(puzzleDim[0])
-	blockYDim, _ := strconv.Atoi(puzzleDim[1])
-
-	inFile, err := os.Open(*filePtr)
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-
-	// Use string arrays to avoid ambiguity when puzzle dimesnions exceed the 9
-	// column digits in a standard sudoku puzzle
-	var digits []string
-	var rows []string
-	var columns []string
-	var squares []string
-	var unitList [][]string
-	var units map[string][][]string
-	var peers map[string]map[string]bool
-
-	var originalPuzzle map[string]string
-
-	if *inputModePtr == "one-line" {
-		// Read the file into an array
-		originalPuzzle, err = readInOneLine(inFile, puzzleLine, *delimiterPtr, *emptyValuePtr, blockXDim, blockYDim)
-		if err != nil {
-			fmt.Println(err)
-			os.Exit(1)
-		}
-	} else {
-		fmt.Println("No appropriate input mode for the puzzle was entered.")
-		os.Exit(1)
-	}
-
-	digits = makeDigits(blockXDim * blockYDim)
-	rows = makeRows(blockXDim * blockYDim)
-	columns = digits
-	squares = cross(rows, columns)
-	unitList = makeUnitList(rows, columns, blockXDim, blockYDim)
-	units = makeUnits(squares, unitList)
-	peers = makePeers(units, blockXDim, blockYDim)
-
-	fmt.Println()
-	fmt.Println("Original Puzzle:")
-	printPuzzle(originalPuzzle, blockXDim, blockYDim)
-
-	solvedPuzzle, contradiction := solve(originalPuzzle, digits, peers, units)
-
-	if !contradiction {
-		fmt.Println()
-		fmt.Println("Solved Puzzle:")
-		printPuzzle(solvedPuzzle, blockXDim, blockYDim)
-	} else {
-		fmt.Println()
-		fmt.Println("No viable solution to the puzzle was found.\n")
-		fmt.Println()
-	}
-
-	elapsed := time.Since(start)
-
-	fmt.Printf("Execution completed in %s \n", elapsed)
+	return solvedPuzzle, true
 }
